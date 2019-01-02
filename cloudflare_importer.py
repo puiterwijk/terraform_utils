@@ -200,7 +200,7 @@ def process_zone(outfile, to_import, zone):
             record[key] = norm_val(record[key])
 
         record['zone_name_safe'] = zone['name_safe']
-        record['name_safe'] = record['name'].replace('.', '_')[:-(len(zone['name'])+1)]
+        record['name_safe'] = record['name'].replace('.', '_').replace('*', 'WLD')[:-(len(zone['name'])+1)]
         record['ctr'] = ctrs[ctr_idx]
         record['record_name'] = '%s_%s_%s_%i' % (
             record['zone_name_safe'],
