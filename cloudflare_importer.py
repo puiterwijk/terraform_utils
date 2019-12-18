@@ -10,7 +10,7 @@ token = None
 
 zone_template = """# Domain: %(name)s
 module "domain_%(name_safe)s" {
-    source = "./domain"
+    source = "github.com/puiterwijk/terraform_utils//modules/domain"
 
     domain = "%(name)s"
 
