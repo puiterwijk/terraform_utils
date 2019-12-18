@@ -9,73 +9,20 @@ token = None
 
 
 zone_template = """# Domain: %(name)s
-resource "cloudflare_zone" "%(name_safe)s" {
-    zone = "%(name)s"
-}
-"""
+module "domain_%(name_safe)s" {
+    source = "./domain"
+
+    domain = "%(name)s"
+
+    # Security settings"""
 
 
-zone_settings_template = """
-resource "cloudflare_zone_settings_override" "%(name_safe)s" {
-    name = "${cloudflare_zone.%(name_safe)s.zone}"
-    settings {
-        always_online            = "%(always_online)s"
-        always_use_https         = "%(always_use_https)s"
-        automatic_https_rewrites = "%(automatic_https_rewrites)s"
-        brotli                   = "%(brotli)s"
-        browser_check            = "%(browser_check)s"
-        development_mode         = "%(development_mode)s"
-        email_obfuscation        = "%(email_obfuscation)s"
-        hotlink_protection       = "%(hotlink_protection)s"
-        ip_geolocation           = "%(ip_geolocation)s"
-        ipv6                     = "%(ipv6)s"
-        opportunistic_encryption = "%(opportunistic_encryption)s"
-        opportunistic_onion      = "%(opportunistic_onion)s"
-        privacy_pass             = "%(privacy_pass)s"
-        rocket_loader            = "%(rocket_loader)s"
-        server_side_exclude      = "%(server_side_exclude)s"
-        tls_1_2_only             = "%(tls_1_2_only)s"
-        tls_client_auth          = "%(tls_client_auth)s"
-        websockets               = "%(websockets)s"
-
-        cache_level              = "%(cache_level)s"
-        min_tls_version          = "%(min_tls_version)s"
-        pseudo_ipv4              = "%(pseudo_ipv4)s"
-        security_level           = "%(security_level)s"
-        ssl                      = "%(ssl)s"
-        tls_1_3                  = "%(tls_1_3)s"
-
-        browser_cache_ttl = %(browser_cache_ttl)i
-        challenge_ttl     = %(challenge_ttl)i
-        edge_cache_ttl    = %(edge_cache_ttl)i
-        max_upload        = %(max_upload)i
-
-        minify {
-            css  = "%(minify__css)s"
-            js   = "%(minify__js)s"
-            html = "%(minify__html)s"
-        }
-
-        mobile_redirect {
-            mobile_subdomain = "%(mobile_redirect__mobile_subdomain)s"
-            status           = "%(mobile_redirect__status)s"
-            strip_uri        = %(mobile_redirect__strip_uri)s
-        }
-
-        security_header {
-            enabled            = %(security_header__strict_transport_security__enabled)s
-            preload            = %(security_header__strict_transport_security__preload)s
-            max_age            = %(security_header__strict_transport_security__max_age)i
-            include_subdomains = %(security_header__strict_transport_security__include_subdomains)s
-            nosniff            = %(security_header__strict_transport_security__nosniff)s
-        }
-    }
-}
-"""
+settings_template = '''
+    %(setting)s = "%(value)s"'''
 
 record_template_generic = """
 resource "cloudflare_record" "%(record_name)s" {
-    domain  = "${cloudflare_zone.%(zone_name_safe)s.zone}"
+    zone_id = module.domain_%(zone_name_safe)s.zone_id
     name    = "%(name)s"
     type    = "%(type)s"
     ttl     = %(ttl)i
@@ -86,7 +33,7 @@ resource "cloudflare_record" "%(record_name)s" {
 
 record_template_srv = """
 resource "cloudflare_record" "%(record_name)s" {
-    domain  = "${cloudflare_zone.%(zone_name_safe)s.zone}"
+    zone_id = module.domain_%(zone_name_safe)s.zone_id
     name    = "%(name)s"
     type    = "%(type)s"
     ttl     = %(ttl)i
@@ -105,7 +52,7 @@ resource "cloudflare_record" "%(record_name)s" {
 
 record_template_mx = """
 resource "cloudflare_record" "%(record_name)s" {
-    domain   = "${cloudflare_zone.%(zone_name_safe)s.zone}"
+    zone_id = module.domain_%(zone_name_safe)s.zone_id
     name     = "%(name)s"
     type     = "%(type)s"
     ttl      = %(ttl)i
@@ -168,6 +115,15 @@ def settings_to_dict(lst):
     res = flatten_dict(res)
     return res
 
+default_settings = {
+    "min_tls_version": "1.0",
+    "security_level": "medium",
+    "ssl": "flexible",
+    "tls_1_3": "on",
+    "tls_client_auth": "off",
+    "always_online": "on",
+    "websockets": "on",
+}
 
 def process_zone(outfile, to_import, zone):
     print("Processing zone %s" % zone['name'])
@@ -181,13 +137,19 @@ def process_zone(outfile, to_import, zone):
 
     records = perform_request("/zones/%s/dns_records" % zone['id'])
 
-    zonefile = "%s.tf" % zone['name_safe']
+    to_set = []
+    for setting in default_settings:
+        if settings[setting] != default_settings[setting]:
+            #to_set[setting] = settings[setting]
+            val = settings[setting]
+            if setting == 'ssl':
+                setting = 'ssl_type'
+            to_set.append(settings_template % {"setting": setting, "value": val})
+    to_set = ''.join(to_set)
 
-    if os.path.exists(zonefile):
-        raise Exception("File for zone %s already exists" % zone['name'])
-
-    outfile.write(zone_template % zone)
-    outfile.write(zone_settings_template % settings)
+    outfile.write((zone_template % zone) + to_set + """
+}
+""")
 
     ctrs = {}
     for record in records:
@@ -208,17 +170,18 @@ def process_zone(outfile, to_import, zone):
             record['type'],
             record['ctr'])
 
-        to_import['records'][record['record_name']] = '%s/%s' % (zone['name'], record['id'])
+        to_import['records'][record['record_name']] = '%s/%s' % (zone['id'], record['id'])
 
         ctrs[ctr_idx] += 1
         template = record_templates.get(record['type'])
         if template is None:
             template = record_template_generic
+        record['name'] = record['name'].replace('.' + zone['name'], '')
         outfile.write(template % record)
 
 
 def run_import(args):
-    subprocess.run(["terraform", "import"] + args, check=True)
+    subprocess.run(["/Users/patrickuiterwijk/Downloads/terraform", "import"] + args, check=True)
 
 
 def main():
@@ -242,7 +205,8 @@ def main():
     for zone in to_import["zones"]:
         zone_id = to_import["zones"][zone]
         print("Importing zone %s (%s)" % (zone, zone_id))
-        run_import(["cloudflare_zone.%s" % zone, zone_id])
+        run_import(
+            ["module.domain_%s.cloudflare_zone.zone" % zone, zone_id])
 
     print("Importing records...")
     for record in to_import["records"]:
