@@ -28,6 +28,16 @@ variable "always_online" {
     default = "on"
 }
 
+variable "always_use_https" {
+    type = string
+    default = "on"
+}
+
+variable "automatic_https_rewrites" {
+    type = string
+    default = "on"
+}
+
 variable "websockets" {
     type = string
     default = "on"

@@ -14,8 +14,8 @@ resource "cloudflare_zone_settings_override" "zone_settings" {
     zone_id = cloudflare_zone.zone.id
     settings {
         always_online            = var.always_online
-        always_use_https         = "on"
-        automatic_https_rewrites = "on"
+        always_use_https         = var.always_use_https
+        automatic_https_rewrites = var.automatic_https_rewrites
         brotli                   = "on"
         browser_check            = "on"
         development_mode         = "off"
