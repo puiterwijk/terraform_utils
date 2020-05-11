@@ -40,7 +40,6 @@ resource "cloudflare_zone_settings_override" "zone_settings" {
 
         browser_cache_ttl = 14400
         challenge_ttl     = 1800
-        edge_cache_ttl    = 7200
         max_upload        = 100
 
         minify {
